@@ -4,24 +4,29 @@ import (
 	"fmt"
 )
 
+type EventConfig interface {
+	Driver() string
+	ConnectionString() string
+}
+
 type event struct {
-	driver   string
-	ip       string
-	port     uint
-	user     string
-	password string
+	DriverName string `default:"" json:"driver" yaml:"driver" toml:"driver"`
+	IP         string `default:"" json:"ip" yaml:"ip" toml:"ip"`
+	Port       uint   `default:"" json:"port" yaml:"port" toml:"port"`
+	UserName   string `default:"" json:"userName" yaml:"userName" toml:"userName"`
+	Password   string `default:"" json:"password" yaml:"password" toml:"password"`
 }
 
 func (e event) Driver() string {
-	return e.driver
+	return e.DriverName
 }
 
 func (e event) ConnectionString() string {
-	url := fmt.Sprintf("%s:%d", e.ip, e.port)
-	if e.user != "" && e.password != "" {
-		url = fmt.Sprintf("%s:%s@%s", e.user, e.password, url)
+	url := fmt.Sprintf("%s:%d", e.IP, e.Port)
+	if e.UserName != "" && e.Password != "" {
+		url = fmt.Sprintf("%s:%s@%s", e.UserName, e.Password, url)
 	}
-	switch e.driver {
+	switch e.DriverName {
 	case "rabbitmq":
 		return fmt.Sprintf("amqp://%s", url)
 	case "redis":

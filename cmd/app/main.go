@@ -14,8 +14,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/amirzayi/rahjoo/middleware"
-	"github.com/amirzayi/rahjoo/middleware/cors"
 	"github.com/bradfitz/gomemcache/memcache"
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
@@ -44,6 +42,8 @@ import (
 	"github.com/amirzayi/clean_architect/pkg/logger"
 	"github.com/amirzayi/clean_architect/pkg/server/grpcserver"
 	"github.com/amirzayi/clean_architect/pkg/server/webserver"
+	"github.com/amirzayi/rahjoo/middleware"
+	"github.com/amirzayi/rahjoo/middleware/cors"
 )
 
 func main() {
@@ -92,9 +92,10 @@ func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
 }
 
 func run(ctx context.Context, cfg config.AppConfig) error {
+
 	eventDriver, err := EventDriver(
-		cfg.Event().Driver(),
-		cfg.Event().ConnectionString(),
+		cfg.Event.Driver(),
+		cfg.Event.ConnectionString(),
 		[]string{}, // todo: add some queues
 	)
 	if err != nil {
@@ -102,15 +103,15 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	}
 
 	cacheDriver := CacheDriver(
-		cfg.Cache().Driver(),
-		cfg.Cache().ConnectionString(),
-		cfg.Cache().Prefix(),
+		cfg.Cache.Driver(),
+		cfg.Cache.ConnectionString(),
+		cfg.Cache.Prefix(),
 	)
 	if err = cacheDriver.Ping(ctx); err != nil {
 		return err
 	}
 
-	db, err := sqlx.Connect(cfg.DB().Driver(), cfg.DB().ConnectionString())
+	db, err := sqlx.Connect(cfg.DB.Driver(), cfg.DB.ConnectionString())
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
 	}
@@ -128,20 +129,20 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	}
 
 	var logWriters []io.Writer
-	if cfg.Logger().Console() {
+	if cfg.Logger.Console() {
 		logWriters = append(logWriters, os.Stdout)
 	}
-	if cfg.Logger().Directory() != "" {
-		fileLogger := logger.NewFileLogger(logger.FileLoggerType(cfg.Logger().FileCreationMode()), cfg.Logger().Directory())
+	if cfg.Logger.Directory() != "" {
+		fileLogger := logger.NewFileLogger(logger.FileLoggerType(cfg.Logger.FileCreationMode()), cfg.Logger.Directory())
 		logWriters = append(logWriters, fileLogger)
 	}
-	if cfg.Logger().RemoteURL() != "" {
-		remoteLogger := logger.NewRemoteLogger(cfg.Logger().RemoteURL())
+	if cfg.Logger.RemoteURL() != "" {
+		remoteLogger := logger.NewRemoteLogger(cfg.Logger.RemoteURL())
 		logWriters = append(logWriters, remoteLogger)
 	}
 
 	logWriter := io.MultiWriter(logWriters...)
-	defaultLogger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{AddSource: true, Level: slog.Level(cfg.Logger().Level())}))
+	defaultLogger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{AddSource: true, Level: slog.Level(cfg.Logger.Level())}))
 	// set as global logger, no need to pass logger to another part of application
 	slog.SetDefault(defaultLogger)
 
@@ -157,7 +158,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 
 	repos := repository.NewSQLRepositories(db)
 
-	authManager := auth.NewJWT(jwt.SigningMethodHS512, []byte(cfg.Auth().Secret()), cfg.Auth().LifeTime())
+	authManager := auth.NewJWT(jwt.SigningMethodHS512, []byte(cfg.Auth.Secret()), cfg.Auth.LifeTime())
 
 	services := service.NewServices(&service.Dependencies{
 		Repositories: repos,
@@ -182,31 +183,31 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	)
 
 	webServer := webserver.New(apiHandler,
-		webserver.WithAddress(cfg.Web().Address()),
+		webserver.WithAddress(cfg.Web.Address()),
 		webserver.WithLogger(webServerLogger),
 		webserver.WithTimeouts(
-			cfg.Web().IdleTimeout(),
-			cfg.Web().ReadTimeOut(),
-			cfg.Web().WriteTimeout(),
-			cfg.Web().ReadHeaderTimeout(),
-			cfg.Web().ShutdownTimeout(),
+			cfg.Web.IdleTimeout(),
+			cfg.Web.ReadTimeOut(),
+			cfg.Web.WriteTimeout(),
+			cfg.Web.ReadHeaderTimeout(),
+			cfg.Web.ShutdownTimeout(),
 		),
 	)
 
 	delivery.SetupHTTPRouter(muxHandler, webServerLogger, services, authManager)
 
 	grpcServer := grpcserver.New(
-		cfg.GRPC().Address(),
-		cfg.GRPC().ShutdownTimeout(),
-		grpc.MaxRecvMsgSize(cfg.GRPC().MaxReceiveMsgSize()),
-		grpc.ReadBufferSize(cfg.GRPC().ReadBufferSize()),
+		cfg.GRPC.Address(),
+		cfg.GRPC.ShutdownTimeout(),
+		grpc.MaxRecvMsgSize(cfg.GRPC.MaxReceiveMsgSize()),
+		grpc.ReadBufferSize(cfg.GRPC.ReadBufferSize()),
 		grpc.ChainUnaryInterceptor(
 			interceptor.ResponseTimeMeter(serverMetricLogger),
 			interceptor.Recovery(serverPanicLogger),
 		),
 	)
 
-	if cfg.GRPC().HasReflection() {
+	if cfg.GRPC.HasReflection() {
 		reflection.Register(grpcServer)
 	}
 
@@ -217,7 +218,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 
 	delivery.SetupGRPC(grpcServer.Server, services)
 
-	if err = delivery.SetupGRPCGateway(ctx, cfg.GRPC().Address(), gwMux, grpcDialOptions...); err != nil {
+	if err = delivery.SetupGRPCGateway(ctx, cfg.GRPC.Address(), gwMux, grpcDialOptions...); err != nil {
 		return err
 	}
 
@@ -231,14 +232,14 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 			errCh <- fmt.Errorf("failed to run web server: %w", err)
 		}
 	}()
-	slog.Debug("web server initialized on " + cfg.Web().Address())
+	slog.Debug("web server initialized on " + cfg.Web.Address())
 
 	go func() {
 		if err = grpcServer.Run(); err != nil {
 			errCh <- fmt.Errorf("failed to run grpc server: %w", err)
 		}
 	}()
-	slog.Debug("grpc server initialized on " + cfg.GRPC().Address())
+	slog.Debug("grpc server initialized on " + cfg.GRPC.Address())
 
 	select {
 	case err = <-errCh:

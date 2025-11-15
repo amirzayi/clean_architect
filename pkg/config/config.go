@@ -8,203 +8,92 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/creasty/defaults"
 	"gopkg.in/yaml.v3"
 )
 
+var ErrorEmptyConfigFilePath = errors.New("empty config file path")
+
 // AppConfig holds the configurations for the entire application, including
-// db, web server, and grpc server configurations.
-// It has no Exported fields to encapsulate configurations.
+// db, web and server, logger, auth mechanism, caching and event driven configurations.
 type AppConfig struct {
-	db     db
-	web    web
-	grpc   grpc
-	logger logger
-	auth   auth
-	cache  cache
-	event  event
+	DB     DBConfig
+	Web    WebConfig
+	GRPC   GRPCConfig
+	Logger LoggerConfig
+	Auth   AuthConfig
+	Cache  CacheConfig
+	Event  EventConfig
 }
 
-func (app AppConfig) DB() db {
-	return app.db
-}
-
-func (app AppConfig) Web() web {
-	return app.web
-}
-
-func (app AppConfig) GRPC() grpc {
-	return app.grpc
-}
-
-func (app AppConfig) Logger() logger {
-	return app.logger
-}
-
-func (app AppConfig) Auth() auth {
-	return app.auth
-}
-
-func (app AppConfig) Cache() cache {
-	return app.cache
-}
-
-func (app AppConfig) Event() event {
-	return app.event
-}
-
-// tmpConfig holds the configurations for the entire application, including
+// appConfig holds the configurations for the entire application, including
 // db, web server, and grpc server configurations.
 // It should have Exported fields to work with tags.
-type tmpConfig struct {
-	DB struct {
-		Driver   string `default:"sqlite" json:"driver" yaml:"driver" toml:"driver"`
-		IP       string `default:"127.0.0.1" json:"ip" yaml:"ip" toml:"ip"`
-		Port     uint   `default:"3306" json:"port" yaml:"port" toml:"port"`
-		UserName string `default:"amir" json:"userName" yaml:"userName" toml:"userName"`
-		Password string `default:"mirzaei" json:"password" yaml:"password" toml:"password"`
-		Name     string `default:"clean-architect" json:"name" yaml:"name" toml:"name"`
-		Path     string `default:"." json:"path" yaml:"path" toml:"path"`
-	} `json:"db" yaml:"db" toml:"db"`
-	Web struct {
-		BindingIPAddress       string `default:"0.0.0.0" json:"bindingIpAddress" yaml:"bindingIpAddress" toml:"bindingIpAddress"`
-		Port                   uint   `default:"8071" json:"port" yaml:"port" toml:"port"`
-		ReadTimeOutInSec       uint   `default:"7" json:"readTimeOutInSec" yaml:"readTimeOutInSec" toml:"readTimeOutInSec"`
-		IdleTimeoutInSec       uint   `default:"10" json:"idleTimeoutInSec" yaml:"idleTimeoutInSec" toml:"idleTimeoutInSec"`
-		WriteTimeoutInSec      uint   `default:"20" json:"writeTimeoutInSec" yaml:"writeTimeoutInSec" toml:"writeTimeoutInSec"`
-		ReadHeaderTimeoutInSec uint   `default:"1" json:"readHeaderTimeoutInSec" yaml:"readHeaderTimeoutInSec" toml:"readHeaderTimeoutInSec"`
-		ShutdownTimeoutInSec   uint   `default:"1" json:"shutdownTimeoutInSec" yaml:"shutdownTimeoutInSec" toml:"shutdownTimeoutInSec"`
-	} `json:"web" yaml:"web" toml:"web"`
-	GRPC struct {
-		BindingIPAddress     string `default:"127.0.0.1" json:"bindingIpAddress" yaml:"bindingIpAddress" toml:"bindingIpAddress"`
-		Port                 uint   `default:"8070" json:"port" yaml:"port" toml:"port"`
-		MaxReceiveMsgSize    int    `default:"5120" json:"maxReceiveMsgSize" yaml:"maxReceiveMsgSize" toml:"maxReceiveMsgSize"`
-		ReadBufferSize       int    `default:"5120" json:"readBufferSize" yaml:"readBufferSize" toml:"readBufferSize"`
-		HasReflection        bool   `default:"true" json:"hasReflection" yaml:"hasReflection" toml:"hasReflection"`
-		ShutdownTimeoutInSec uint   `default:"1" json:"shutdownTimeoutInSec" yaml:"shutdownTimeoutInSec" toml:"shutdownTimeoutInSec"`
-	} `json:"grpc" yaml:"grpc" toml:"grpc"`
-	Logger struct {
-		Level            int    `default:"0" json:"level" yaml:"level" toml:"level"`
-		Directory        string `default:"log" json:"directory" yaml:"directory" toml:"directory"`
-		FileCreationMode int    `default:"0" json:"fileCreationMode" yaml:"fileCreationMode" toml:"fileCreationMode"`
-		RemoteURL        string `default:"" json:"remoteURL" yaml:"remoteURL" toml:"remoteURL"`
-		Console          bool   `default:"true" json:"console" yaml:"console" toml:"console"`
-	} `json:"logger" yaml:"logger" toml:"logger"`
-	Auth struct {
-		Secret   string `default:"some_secret" json:"secret" yaml:"secret" toml:"secret"`
-		LifeTime int    `default:"1" json:"lifeTime" yaml:"lifeTime" toml:"lifeTime"`
-	} `json:"auth" yaml:"auth" toml:"auth"`
-	Cache struct {
-		Driver   string `default:"" json:"driver" yaml:"driver" toml:"driver"`
-		IP       string `default:"" json:"ip" yaml:"ip" toml:"ip"`
-		Port     uint   `default:"" json:"port" yaml:"port" toml:"port"`
-		Prefix   string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
-		UserName string `default:"" json:"userName" yaml:"userName" toml:"userName"`
-		Password string `default:"" json:"password" yaml:"password" toml:"password"`
-	} `json:"cache" yaml:"cache" toml:"cache"`
-	Event struct {
-		Driver   string `default:"" json:"driver" yaml:"driver" toml:"driver"`
-		IP       string `default:"" json:"ip" yaml:"ip" toml:"ip"`
-		Port     uint   `default:"" json:"port" yaml:"port" toml:"port"`
-		UserName string `default:"" json:"userName" yaml:"userName" toml:"userName"`
-		Password string `default:"" json:"password" yaml:"password" toml:"password"`
-	} `json:"event" yaml:"event" toml:"event"`
-}
-
-func (cfg tmpConfig) ToAppConfig() AppConfig {
-	return AppConfig{
-		db: db{
-			driver:   cfg.DB.Driver,
-			ip:       cfg.DB.IP,
-			port:     cfg.DB.Port,
-			userName: cfg.DB.UserName,
-			password: cfg.DB.Password,
-			name:     cfg.DB.Name,
-			path:     cfg.DB.Path,
-		},
-		web: web{
-			bindingIpAddress:       cfg.Web.BindingIPAddress,
-			port:                   cfg.Web.Port,
-			readTimeOutInSec:       cfg.Web.ReadTimeOutInSec,
-			idleTimeoutInSec:       cfg.Web.IdleTimeoutInSec,
-			writeTimeoutInSec:      cfg.Web.WriteTimeoutInSec,
-			readHeaderTimeoutInSec: cfg.Web.ReadHeaderTimeoutInSec,
-			shutdownTimeout:        cfg.Web.ShutdownTimeoutInSec,
-		},
-		grpc: grpc{
-			bindingIpAddress:  cfg.GRPC.BindingIPAddress,
-			port:              cfg.GRPC.Port,
-			maxReceiveMsgSize: cfg.GRPC.MaxReceiveMsgSize,
-			readBufferSize:    cfg.GRPC.ReadBufferSize,
-			hasReflection:     cfg.GRPC.HasReflection,
-			shutdownTimeout:   cfg.GRPC.ShutdownTimeoutInSec,
-		},
-		logger: logger{
-			level:            cfg.Logger.Level,
-			directory:        cfg.Logger.Directory,
-			fileCreationMode: cfg.Logger.FileCreationMode,
-			remoteURL:        cfg.Logger.RemoteURL,
-			console:          cfg.Logger.Console,
-		},
-		auth: auth{
-			secret:   cfg.Auth.Secret,
-			lifeTime: cfg.Auth.LifeTime,
-		},
-		cache: cache{
-			driver:   cfg.Cache.Driver,
-			ip:       cfg.Cache.IP,
-			port:     cfg.Cache.Port,
-			prefix:   cfg.Cache.Prefix,
-			user:     cfg.Cache.UserName,
-			password: cfg.Cache.Password,
-		},
-		event: event{
-			driver:   cfg.Event.Driver,
-			ip:       cfg.Event.IP,
-			port:     cfg.Event.Port,
-			user:     cfg.Event.UserName,
-			password: cfg.Event.Password,
-		},
-	}
+type appConfig struct {
+	DB     db     `json:"db" yaml:"db" toml:"db"`
+	Web    web    `json:"web" yaml:"web" toml:"web"`
+	GRPC   grpc   `json:"grpc" yaml:"grpc" toml:"grpc"`
+	Logger logger `json:"logger" yaml:"logger" toml:"logger"`
+	Auth   auth   `json:"auth" yaml:"auth" toml:"auth"`
+	Cache  cache  `json:"cache" yaml:"cache" toml:"cache"`
+	Event  event  `json:"event" yaml:"event" toml:"event"`
 }
 
 // LoadConfig will return AppConfig which that values are filled by given config file's address.
-func LoadConfig(fileAddress string) (AppConfig, error) {
-	bytes, err := os.ReadFile(fileAddress)
+func LoadConfig(configFilePath string) (AppConfig, error) {
+	cfg, err := loadConfig(configFilePath)
 	if err != nil {
 		return AppConfig{}, err
 	}
+	return cfg.toAppConfig(), nil
+}
 
-	var tmpCfg tmpConfig
+func loadConfig(configFilePath string) (appConfig, error) {
+	var appConfig appConfig
 
-	switch filepath.Ext(fileAddress) {
+	if strings.TrimSpace(configFilePath) == "" {
+		return appConfig, ErrorEmptyConfigFilePath
+	}
+
+	bytes, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return appConfig, err
+	}
+
+	switch filepath.Ext(configFilePath) {
 	case ".json":
-		err = json.Unmarshal(bytes, &tmpCfg)
+		err = json.Unmarshal(bytes, &appConfig)
 	case ".yml", ".yaml":
-		err = yaml.Unmarshal(bytes, &tmpCfg)
+		err = yaml.Unmarshal(bytes, &appConfig)
 	case ".toml":
-		err = toml.Unmarshal(bytes, &tmpCfg)
+		err = toml.Unmarshal(bytes, &appConfig)
 	default:
 		err = errors.New("unsupported config's file type")
 	}
 
-	if err != nil {
-		return AppConfig{}, err
-	}
+	return appConfig, err
+}
 
-	return tmpCfg.ToAppConfig(), nil
+func (cfg appConfig) toAppConfig() AppConfig {
+	return AppConfig{
+		DB:     cfg.DB,
+		Web:    cfg.Web,
+		GRPC:   cfg.GRPC,
+		Logger: cfg.Logger,
+		Auth:   cfg.Auth,
+		Cache:  cfg.Cache,
+		Event:  cfg.Event,
+	}
 }
 
 // LoadConfigOrDefault will do LoadConfig. if loading had problem, then returns default values config.
 func LoadConfigOrDefault(fileAddress string) (AppConfig, error) {
-	cfg, err := LoadConfig(fileAddress)
-	if err == nil {
-		return cfg, nil
+	cfg, err := loadConfig(fileAddress)
+	if err != nil {
+		err = defaults.Set(&cfg)
 	}
-
-	var tmpCfg tmpConfig
-	err = defaults.Set(&tmpCfg)
-	return tmpCfg.ToAppConfig(), err
+	return cfg.toAppConfig(), err
 }
