@@ -10,13 +10,8 @@ type redisBroker struct {
 	client *redis.Client
 }
 
-func NewRedisBroker(url string) (Driver, error) {
-	opt, err := redis.ParseURL(url)
-	if err != nil {
-		return nil, err
-	}
-	client := redis.NewClient(opt)
-	return redisBroker{client: client}, nil
+func NewRedisBroker(client *redis.Client) Driver {
+	return redisBroker{client: client}
 }
 
 func (r redisBroker) Publish(queue string, data []byte) error {

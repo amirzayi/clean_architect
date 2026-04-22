@@ -24,6 +24,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -69,7 +70,13 @@ func main() {
 func CacheDriver(driver, url, prefix string) cache.Driver {
 	switch driver {
 	case "redis":
-		return cache.NewRedisDriver(url, prefix)
+		opt, err := redis.ParseURL(url)
+		if err != nil {
+			panic(err)
+			// return nil, err
+		}
+		client := redis.NewClient(opt)
+		return cache.NewRedisDriver(client, prefix)
 	case "memcached":
 		mc := memcache.New(url)
 		return cache.NewMemCachedDriver(mc, prefix)
@@ -81,7 +88,13 @@ func CacheDriver(driver, url, prefix string) cache.Driver {
 func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
 	switch driver {
 	case "redis":
-		return bus.NewRedisBroker(url)
+		opt, err := redis.ParseURL(url)
+		if err != nil {
+			panic(err)
+			// return nil, err
+		}
+		client := redis.NewClient(opt)
+		return bus.NewRedisBroker(client), nil
 	case "nats":
 		return bus.NewNatsBroker(url)
 	case "rabbitmq":

@@ -13,9 +13,7 @@ type redisCache struct {
 	prefix string
 }
 
-func NewRedisDriver(url string, prefix string) Driver {
-	opt, _ := redis.ParseURL(url)
-	client := redis.NewClient(opt)
+func NewRedisDriver(client *redis.Client, prefix string) Driver {
 	return redisCache{client: client, prefix: prefix}
 }
 
