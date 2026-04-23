@@ -72,7 +72,7 @@ func CacheDriver(driver, url, prefix string) cache.Driver {
 	case "redis":
 		opt, err := redis.ParseURL(url)
 		if err != nil {
-			panic(err)
+			panic("invalid redis server url")
 			// return nil, err
 		}
 		client := redis.NewClient(opt)
@@ -90,8 +90,7 @@ func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
 	case "redis":
 		opt, err := redis.ParseURL(url)
 		if err != nil {
-			panic(err)
-			// return nil, err
+			return nil, err
 		}
 		client := redis.NewClient(opt)
 		return bus.NewRedisBroker(client), nil

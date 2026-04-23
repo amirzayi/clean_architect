@@ -25,7 +25,7 @@ func (r redisScheduler) ScheduleTask(ctx context.Context, scheduleAt time.Time, 
 		Score:  float64(scheduleAt.Unix()),
 		Member: payload.Title,
 	})
-	pipe.Set(ctx, fmt.Sprintf("task_%s_%d",payload.Title,scheduleAt.Unix()), nil, 0)
+	pipe.Set(ctx, fmt.Sprintf("task_%s_%d", payload.Title, scheduleAt.Unix()), nil, 0)
 	_, err := pipe.Exec(ctx)
 	return err
 }
