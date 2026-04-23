@@ -2,7 +2,10 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"time"
 
@@ -15,17 +18,24 @@ func NewRedisScheduler(client *redis.Client) Driver {
 }
 
 type redisScheduler struct {
-	client   *redis.Client
-	runEvery time.Duration
+	client    *redis.Client
+	runEvery  time.Duration
+	executors map[string]JobExecutor
 }
 
+var ShcedulerNotDefinedErr = errors.New("scheduler not defined for this task")
+
 func (r redisScheduler) ScheduleTask(ctx context.Context, scheduleAt time.Time, payload queue.Payload) error {
+	if _, exists := r.executors[payload.Title]; !exists {
+		return ShcedulerNotDefinedErr
+	}
 	pipe := r.client.Pipeline()
+	key := fmt.Sprintf("task_%s_%d_%d", payload.Title, scheduleAt.Unix(), rand.IntN(100))
 	pipe.ZAdd(ctx, "scheduler", redis.Z{
 		Score:  float64(scheduleAt.Unix()),
-		Member: payload.Title,
+		Member: key,
 	})
-	pipe.Set(ctx, fmt.Sprintf("task_%s_%d", payload.Title, scheduleAt.Unix()), nil, 0)
+	pipe.Set(ctx, key, nil, 0)
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -33,6 +43,7 @@ func (r redisScheduler) ScheduleTask(ctx context.Context, scheduleAt time.Time, 
 func (r redisScheduler) Start(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 	go func() {
+		var payload queue.Payload
 		defer close(errCh)
 		t := time.NewTicker(r.runEvery)
 		defer t.Stop()
@@ -43,7 +54,7 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 				return
 
 			case <-time.NewTicker(time.Second).C:
-				data, err := r.client.ZRangeByScore(ctx, "scheduler", &redis.ZRangeBy{
+				tasks, err := r.client.ZRangeByScore(ctx, "scheduler", &redis.ZRangeBy{
 					Min: "-inf",
 					Max: strconv.FormatInt(time.Now().Unix(), 10),
 				}).Result()
@@ -51,12 +62,25 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 					errCh <- err
 					continue
 				}
-				for _, d := range data {
-					fmt.Println("executing", d)
-					if err = r.client.ZRem(ctx, "scheduler", d).Err(); err != nil {
+				for _, task := range tasks {
+					data, err := r.client.Get(ctx, task).Bytes()
+					if err != nil {
+						errCh <- err
+						continue
+					}
+					if err = json.Unmarshal(data, &payload); err != nil {
+						errCh <- err
+						continue
+					}
+					executor, exists := r.executors[payload.Title]
+					if !exists {
+						errCh <- ShcedulerNotDefinedErr
+						continue
+					}
+					executor.Execute(ctx, payload)
+					if err = r.client.ZRem(ctx, "scheduler", task).Err(); err != nil {
 						errCh <- err
 					}
-
 				}
 			}
 		}
