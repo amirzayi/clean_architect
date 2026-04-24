@@ -7,14 +7,19 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amirzayi/clean_architect/pkg/queue"
 	"github.com/redis/go-redis/v9"
 )
 
-func NewRedisScheduler(client *redis.Client) Driver {
-	return redisScheduler{client: client}
+func NewRedisScheduler(client *redis.Client, runEvery time.Duration) Driver {
+	return redisScheduler{
+		client:    client,
+		runEvery:  runEvery,
+		executors: make(map[string]JobExecutor),
+	}
 }
 
 type redisScheduler struct {
@@ -23,20 +28,28 @@ type redisScheduler struct {
 	executors map[string]JobExecutor
 }
 
+func (r redisScheduler) RegisterExecutor(task string, executor JobExecutor) {
+	r.executors[task] = executor
+}
+
 var ShcedulerNotDefinedErr = errors.New("scheduler not defined for this task")
 
-func (r redisScheduler) ScheduleTask(ctx context.Context, scheduleAt time.Time, payload queue.Payload) error {
-	if _, exists := r.executors[payload.Title]; !exists {
+func (r redisScheduler) ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload queue.Payload) error {
+	if _, exists := r.executors[task]; !exists {
 		return ShcedulerNotDefinedErr
 	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	pipe := r.client.Pipeline()
-	key := fmt.Sprintf("task_%s_%d_%d", payload.Title, scheduleAt.Unix(), rand.IntN(100))
+	key := fmt.Sprintf("task_%s_%d_%d", task, scheduleAt.Unix(), rand.IntN(100))
 	pipe.ZAdd(ctx, "scheduler", redis.Z{
 		Score:  float64(scheduleAt.Unix()),
 		Member: key,
 	})
-	pipe.Set(ctx, key, nil, 0)
-	_, err := pipe.Exec(ctx)
+	pipe.Set(ctx, key, data, 0)
+	_, err = pipe.Exec(ctx)
 	return err
 }
 
@@ -63,6 +76,12 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 					continue
 				}
 				for _, task := range tasks {
+					taskName:=strings.Split( strings.TrimLeft(task,"task_"),"_")[0]
+					executor, exists := r.executors[taskName]
+					if !exists {
+						errCh <- ShcedulerNotDefinedErr
+						continue
+					}
 					data, err := r.client.Get(ctx, task).Bytes()
 					if err != nil {
 						errCh <- err
@@ -70,11 +89,6 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 					}
 					if err = json.Unmarshal(data, &payload); err != nil {
 						errCh <- err
-						continue
-					}
-					executor, exists := r.executors[payload.Title]
-					if !exists {
-						errCh <- ShcedulerNotDefinedErr
 						continue
 					}
 					executor.Execute(ctx, payload)

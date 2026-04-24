@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	chim "github.com/go-chi/chi/v5/middleware"
@@ -41,11 +42,14 @@ import (
 	"github.com/amirzayi/clean_architect/pkg/hash"
 	"github.com/amirzayi/clean_architect/pkg/interceptor"
 	"github.com/amirzayi/clean_architect/pkg/logger"
+	"github.com/amirzayi/clean_architect/pkg/queue"
+	"github.com/amirzayi/clean_architect/pkg/scheduler"
 	"github.com/amirzayi/clean_architect/pkg/server/grpcserver"
 	"github.com/amirzayi/clean_architect/pkg/server/webserver"
 	"github.com/amirzayi/rahjoo/middleware"
 	"github.com/amirzayi/rahjoo/middleware/cors"
 )
+
 
 func main() {
 	var configPath string
@@ -60,13 +64,36 @@ func main() {
 		slog.Error(err.Error())
 		return
 	}
-
+	sched, err := JobSchedulerDriver("redis", "redis://localhost:6379")
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
+	sched.RegisterExecutor("printer", printer{})
+	err = errors.Join(sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "amir"}),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mohammad"}),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mirzaei"}),
+	)
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
+	slog.Warn("did register")
+	for err = range sched.Start(ctx) {
+		slog.Error(err.Error())
+	}
 	if err = run(ctx, cfg); err != nil {
 		slog.Error(err.Error())
 		return
 	}
 }
 
+type printer struct{}
+
+func (printer) Execute(_ context.Context,payload queue.Payload) error{
+	fmt.Println("hi there! how you doing?",payload.Data)
+	return nil
+}
 func CacheDriver(driver, url, prefix string) cache.Driver {
 	switch driver {
 	case "redis":
@@ -103,8 +130,21 @@ func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
 	}
 }
 
-func run(ctx context.Context, cfg config.AppConfig) error {
+func JobSchedulerDriver(driver, url string) (scheduler.Driver, error) {
+	switch driver {
+	case "redis":
+		opt, err := redis.ParseURL(url)
+		if err != nil {
+			return nil, err
+		}
+		client := redis.NewClient(opt)
+		return scheduler.NewRedisScheduler(client, time.Millisecond), nil
+	default:
+		return nil, nil
+	}
+}
 
+func run(ctx context.Context, cfg config.AppConfig) error {
 	eventDriver, err := EventDriver(
 		cfg.Event.Driver(),
 		cfg.Event.ConnectionString(),
