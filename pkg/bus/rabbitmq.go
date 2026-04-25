@@ -1,7 +1,6 @@
 package bus
 
 import (
-	"errors"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -56,8 +55,4 @@ func (r rabbit) Subscribe(queue string) (<-chan []byte, <-chan error, error) {
 	errCh := make(chan error)
 	close(errCh)
 	return dataCh, errCh, nil
-}
-
-func (r rabbit) Close() error {
-	return errors.Join(r.ch.Close(), r.conn.Close())
 }

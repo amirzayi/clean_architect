@@ -53,11 +53,3 @@ func (c *inMemoryCache) Delete(_ context.Context, key string) error {
 	c.mu.Unlock()
 	return nil
 }
-
-func (c *inMemoryCache) Ping(context.Context) error {
-	return nil
-}
-
-func (c *inMemoryCache) Close() error {
-	return nil
-}

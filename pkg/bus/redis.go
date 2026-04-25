@@ -32,7 +32,3 @@ func (r redisBroker) Subscribe(queue string) (<-chan []byte, <-chan error, error
 	close(errCh)
 	return dataCh, errCh, nil
 }
-
-func (r redisBroker) Close() error {
-	return r.client.Close()
-}

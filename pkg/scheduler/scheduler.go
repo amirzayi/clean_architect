@@ -13,6 +13,4 @@ type Driver interface {
 	RegisterExecutor(task string, executor JobExecutor)
 }
 
-type JobExecutor interface {
-	Execute(ctx context.Context, payload queue.Payload)error
-}
+type JobExecutor func(ctx context.Context, payload queue.Payload) error

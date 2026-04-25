@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
@@ -25,7 +24,6 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,20 +34,16 @@ import (
 	"github.com/amirzayi/clean_architect/internal/repository"
 	"github.com/amirzayi/clean_architect/internal/service"
 	"github.com/amirzayi/clean_architect/pkg/auth"
-	"github.com/amirzayi/clean_architect/pkg/bus"
-	"github.com/amirzayi/clean_architect/pkg/cache"
 	"github.com/amirzayi/clean_architect/pkg/config"
 	"github.com/amirzayi/clean_architect/pkg/hash"
 	"github.com/amirzayi/clean_architect/pkg/interceptor"
 	"github.com/amirzayi/clean_architect/pkg/logger"
 	"github.com/amirzayi/clean_architect/pkg/queue"
-	"github.com/amirzayi/clean_architect/pkg/scheduler"
 	"github.com/amirzayi/clean_architect/pkg/server/grpcserver"
 	"github.com/amirzayi/clean_architect/pkg/server/webserver"
 	"github.com/amirzayi/rahjoo/middleware"
 	"github.com/amirzayi/rahjoo/middleware/cors"
 )
-
 
 func main() {
 	var configPath string
@@ -64,102 +58,54 @@ func main() {
 		slog.Error(err.Error())
 		return
 	}
-	sched, err := JobSchedulerDriver("redis", "redis://localhost:6379")
-	if err != nil {
-		slog.Error(err.Error())
-		return
-	}
-	sched.RegisterExecutor("printer", printer{})
-	err = errors.Join(sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "amir"}),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mohammad"}),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mirzaei"}),
-	)
-	if err != nil {
-		slog.Error(err.Error())
-		return
-	}
-	slog.Warn("did register")
-	for err = range sched.Start(ctx) {
-		slog.Error(err.Error())
-	}
 	if err = run(ctx, cfg); err != nil {
 		slog.Error(err.Error())
 		return
 	}
 }
 
-type printer struct{}
-
-func (printer) Execute(_ context.Context,payload queue.Payload) error{
-	fmt.Println("hi there! how you doing?",payload.Data)
-	return nil
-}
-func CacheDriver(driver, url, prefix string) cache.Driver {
-	switch driver {
-	case "redis":
-		opt, err := redis.ParseURL(url)
-		if err != nil {
-			panic("invalid redis server url")
-			// return nil, err
-		}
-		client := redis.NewClient(opt)
-		return cache.NewRedisDriver(client, prefix)
-	case "memcached":
-		mc := memcache.New(url)
-		return cache.NewMemCachedDriver(mc, prefix)
-	default:
-		return cache.NewInMemoryDriver()
-	}
-}
-
-func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
-	switch driver {
-	case "redis":
-		opt, err := redis.ParseURL(url)
-		if err != nil {
-			return nil, err
-		}
-		client := redis.NewClient(opt)
-		return bus.NewRedisBroker(client), nil
-	case "nats":
-		return bus.NewNatsBroker(url)
-	case "rabbitmq":
-		return bus.NewRabbitBroker(url, queues)
-	default:
-		return bus.NewInMemoryDriver(queues), nil
-	}
-}
-
-func JobSchedulerDriver(driver, url string) (scheduler.Driver, error) {
-	switch driver {
-	case "redis":
-		opt, err := redis.ParseURL(url)
-		if err != nil {
-			return nil, err
-		}
-		client := redis.NewClient(opt)
-		return scheduler.NewRedisScheduler(client, time.Millisecond), nil
-	default:
-		return nil, nil
-	}
-}
-
 func run(ctx context.Context, cfg config.AppConfig) error {
+	deps := dependencies{}
+	sched, err := JobSchedulerDriver("redis", "redis://localhost:6379", &deps)
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+	sched.RegisterExecutor("printer", func(_ context.Context, payload queue.Payload) error {
+		fmt.Println("hi there! how you doing?", payload.Data)
+		return nil
+	})
+	err = errors.Join(
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "amir"}),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mohammad"}),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mirzaei"}),
+	)
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+	slog.Warn("did register")
+	for err = range sched.Start(ctx) {
+		slog.Error(err.Error())
+	}
+
 	eventDriver, err := EventDriver(
 		cfg.Event.Driver(),
 		cfg.Event.ConnectionString(),
 		[]string{}, // todo: add some queues
+		&deps,
 	)
 	if err != nil {
 		return err
 	}
 
-	cacheDriver := CacheDriver(
+	cacheDriver, err := CacheDriver(
 		cfg.Cache.Driver(),
 		cfg.Cache.ConnectionString(),
 		cfg.Cache.Prefix(),
+		&deps,
 	)
-	if err = cacheDriver.Ping(ctx); err != nil {
+	if err != nil {
 		return err
 	}
 
@@ -306,8 +252,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	for _, f := range [...]func() error{
 		webServer.GracefulShutdown,
 		db.Close,
-		cacheDriver.Close,
-		eventDriver.Close,
+		deps.Close,
 		func() error { grpcServer.GracefulShutdown(); return nil },
 	} {
 		wg.Add(1)
