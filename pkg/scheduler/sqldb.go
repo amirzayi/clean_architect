@@ -12,9 +12,9 @@ import (
 )
 
 type taskModel struct {
-	ID          string
-	Name        string
-	Payload     string
+	ID           string
+	Name         string
+	Payload      string
 	Scheduled_At string
 }
 type sqlScheduler struct {
@@ -38,7 +38,7 @@ func (s sqlScheduler) ScheduleTask(ctx context.Context, task string, scheduleAt 
 		`INSERT INTO task_scheduler
 	(id,name,payload,scheduled_at)
 	VALUES(?,?,?,?)`,
-	uuid.New(),	task, string(payload), scheduleAt.Format(time.DateTime))
+		uuid.New(), task, string(payload), scheduleAt.Format(time.DateTime))
 	if err != nil {
 		return err
 	}

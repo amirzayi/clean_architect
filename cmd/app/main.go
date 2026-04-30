@@ -61,7 +61,7 @@ func main() {
 
 func run(ctx context.Context, cfg config.AppConfig) error {
 	deps := dependencies{}
-	sched, err := JobSchedulerDriver(cfg.Scheduler.Driver(), cfg.Scheduler.ConnectionString(), &deps)
+	sched, err := JobSchedulerDriver(cfg.Scheduler, &deps)
 	if err != nil {
 		return err
 	}

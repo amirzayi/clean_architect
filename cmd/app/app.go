@@ -205,14 +205,14 @@ func EventDriver(driver, url string, queues []string, deps *dependencies) (bus.D
 	}
 }
 
-func JobSchedulerDriver(driver, url string, deps *dependencies) (scheduler.Driver, error) {
-	switch driver {
+func JobSchedulerDriver(cfg config.SchedulerConfig, deps *dependencies) (scheduler.Driver, error) {
+	switch cfg.Driver() {
 	case "redis":
-		redisClient, err := deps.getRedisClient(url)
-		return scheduler.NewRedisScheduler(redisClient, time.Second, 1), err
+		redisClient, err := deps.getRedisClient(cfg.ConnectionString())
+		return scheduler.NewRedisScheduler(redisClient, cfg.RunEvery(), cfg.Concurrency()), err
 	case "sqlite":
-		db, err := deps.getDBAndDoMigrate(driver, url)
-		return scheduler.NewSQLScheduler(db, time.Second, 1), err
+		db, err := deps.getDBAndDoMigrate(cfg.Driver(), cfg.ConnectionString())
+		return scheduler.NewSQLScheduler(db, cfg.RunEvery(), cfg.Concurrency()), err
 	default:
 		return scheduler.NewDiscard(), nil
 	}

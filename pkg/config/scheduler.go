@@ -4,22 +4,27 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type SchedulerConfig interface {
 	Driver() string
 	ConnectionString() string
+	Concurrency() int
+	RunEvery() time.Duration
 }
 
 type scheduler struct {
-	DriverName string `default:"" json:"driver" yaml:"driver" toml:"driver"`
-	IP         string `default:"" json:"ip" yaml:"ip" toml:"ip"`
-	Port       uint   `default:"" json:"port" yaml:"port" toml:"port"`
-	PrefixName string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
-	UserName   string `default:"" json:"userName" yaml:"userName" toml:"userName"`
-	Password   string `default:"" json:"password" yaml:"password" toml:"password"`
-	Name       string `default:"clean-architect" json:"name" yaml:"name" toml:"name"`
-	Path       string `default:"." json:"path" yaml:"path" toml:"path"`
+	DriverName       string `default:"" json:"driver" yaml:"driver" toml:"driver"`
+	IP               string `default:"" json:"ip" yaml:"ip" toml:"ip"`
+	Port             uint   `default:"" json:"port" yaml:"port" toml:"port"`
+	PrefixName       string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
+	UserName         string `default:"" json:"userName" yaml:"userName" toml:"userName"`
+	Password         string `default:"" json:"password" yaml:"password" toml:"password"`
+	Name             string `default:"clean-architect" json:"name" yaml:"name" toml:"name"`
+	Path             string `default:"." json:"path" yaml:"path" toml:"path"`
+	ConcurrencyLevel int    `default:"." json:"concurrency" yaml:"concurrency" toml:"concurrency"`
+	RunEverySeconds  int    `default:"." json:"run_every_seconds" yaml:"run_every_seconds" toml:"run_every_seconds"`
 }
 
 func (s scheduler) Driver() string {
@@ -55,4 +60,17 @@ func (s scheduler) ConnectionString() string {
 	default:
 		return ""
 	}
+}
+
+func (s scheduler) Concurrency() int {
+	if s.ConcurrencyLevel < 1 {
+		return 1
+	}
+	return s.ConcurrencyLevel
+}
+func (s scheduler) RunEvery() time.Duration {
+	if s.RunEverySeconds < 1 {
+		return time.Second
+	}
+	return time.Second * time.Duration(s.RunEverySeconds)
 }
