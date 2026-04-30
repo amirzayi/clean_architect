@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -15,10 +16,12 @@ import (
 	"github.com/amirzayi/clean_architect/pkg/logger"
 	"github.com/amirzayi/clean_architect/pkg/scheduler"
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/jmoiron/sqlx"
 	"github.com/nats-io/nats.go"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
@@ -30,9 +33,10 @@ type dependencies struct {
 	memcacheClient     *memcache.Client
 	rabbitmqChannel    *amqp.Channel
 	rabbitmqConnection *amqp.Connection
+	db                 *sqlx.DB
 
-	redisError, natsError, memcacheError, rabbitError error
-	redisOnce, natsOnce, memcacheOnce, rabbitmqOnce   sync.Once
+	redisError, natsError, memcacheError, rabbitError, dbError error
+	redisOnce, natsOnce, memcacheOnce, rabbitmqOnce, dbOnce    sync.Once
 }
 
 var ErrRedisConnectionTimeout = errors.New("redis connection timeout")
@@ -97,6 +101,36 @@ func (d *dependencies) getRabbitmqChannel(url string) (*amqp.Channel, error) {
 		d.rabbitmqChannel = channel
 	})
 	return d.rabbitmqChannel, d.rabbitError
+}
+
+func (d *dependencies) getDBAndDoMigrate(driver, url string) (*sqlx.DB, error) {
+	d.dbOnce.Do(func() {
+		db, err := sqlx.Connect(driver, url)
+		if err != nil {
+			d.dbError = fmt.Errorf("failed to connect database: %w", err)
+			return
+		}
+		if err = db.Ping(); err != nil {
+			d.dbError = fmt.Errorf("failed to ping database: %w", err)
+			return
+		}
+		migratorDriver, err := dbMigratorDriver(driver, db.DB)
+		if err != nil {
+			d.dbError = fmt.Errorf("failed to load database migrator driver: %v", err)
+			return
+		}
+		migrator, err := migrate.NewWithDatabaseInstance("file://infra/migrations", driver, migratorDriver)
+		if err != nil {
+			d.dbError = fmt.Errorf("failed to setup migrator: %v", err)
+			return
+		}
+		if err = migrator.Up(); err != nil && err != migrate.ErrNoChange {
+			d.dbError = fmt.Errorf("failed to do migrate: %v", err)
+			return
+		}
+		d.db = db
+	})
+	return d.db, d.dbError
 }
 
 func dbMigratorDriver(driver string, db *sql.DB) (dbDriver database.Driver, err error) {
@@ -176,6 +210,9 @@ func JobSchedulerDriver(driver, url string, deps *dependencies) (scheduler.Drive
 	case "redis":
 		redisClient, err := deps.getRedisClient(url)
 		return scheduler.NewRedisScheduler(redisClient, time.Second, 1), err
+	case "sqlite":
+		db, err := deps.getDBAndDoMigrate(driver, url)
+		return scheduler.NewSQLScheduler(db, time.Second, 1), err
 	default:
 		return scheduler.NewDiscard(), nil
 	}

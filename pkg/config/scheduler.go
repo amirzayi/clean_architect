@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,6 +18,8 @@ type scheduler struct {
 	PrefixName string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
 	UserName   string `default:"" json:"userName" yaml:"userName" toml:"userName"`
 	Password   string `default:"" json:"password" yaml:"password" toml:"password"`
+	Name       string `default:"clean-architect" json:"name" yaml:"name" toml:"name"`
+	Path       string `default:"." json:"path" yaml:"path" toml:"path"`
 }
 
 func (s scheduler) Driver() string {
@@ -31,6 +34,24 @@ func (s scheduler) ConnectionString() string {
 	switch s.Driver() {
 	case "redis":
 		return fmt.Sprintf("redis://%s", url)
+	case "postgres":
+		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+			s.UserName,
+			s.Password,
+			s.IP,
+			s.Port,
+			s.Name,
+		)
+	case "mysql":
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+			s.UserName,
+			s.Password,
+			s.IP,
+			s.Port,
+			s.Name,
+		)
+	case "sqlite":
+		return fmt.Sprintf("%s.sqlite", filepath.Join(s.Path, s.Name))
 	default:
 		return ""
 	}

@@ -17,10 +17,8 @@ import (
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
@@ -93,20 +91,9 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		return err
 	}
 
-	db, err := sqlx.Connect(cfg.DB.Driver(), cfg.DB.ConnectionString())
+	db, err := deps.getDBAndDoMigrate(cfg.DB.Driver(), cfg.DB.ConnectionString())
 	if err != nil {
-		return fmt.Errorf("failed to connect database: %w", err)
-	}
-	migratorDriver, err := dbMigratorDriver(cfg.DB.Driver(), db.DB)
-	if err != nil {
-		return fmt.Errorf("failed to load database migrator driver: %v", err)
-	}
-	migrator, err := migrate.NewWithDatabaseInstance("file://infra/migrations", cfg.DB.Driver(), migratorDriver)
-	if err != nil {
-		return fmt.Errorf("failed to setup migrator: %v", err)
-	}
-	if err = migrator.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed to do migrate: %v", err)
+		return err
 	}
 
 	logWriter := logWriter(cfg.Logger)
@@ -201,14 +188,14 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 			errCh <- fmt.Errorf("failed to run web server: %w", err)
 		}
 	}()
-	slog.Debug("web server initialized","address", cfg.Web.Address())
+	slog.Debug("web server initialized", "address", cfg.Web.Address())
 
 	go func() {
 		if err = grpcServer.Run(); err != nil {
 			errCh <- fmt.Errorf("failed to run grpc server: %w", err)
 		}
 	}()
-	slog.Debug("grpc server initialized" ,"address" ,  cfg.GRPC.Address())
+	slog.Debug("grpc server initialized", "address", cfg.GRPC.Address())
 
 	select {
 	case err = <-errCh:

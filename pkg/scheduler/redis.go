@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand/v2"
 	"strconv"
@@ -31,8 +30,6 @@ func NewRedisScheduler(client *redis.Client, runEvery time.Duration, concurrency
 func (r redisScheduler) RegisterExecutor(task string, executor JobExecutor) {
 	r.executors[task] = executor
 }
-
-var ErrExecutorNotDefined = errors.New("executor not defined for this task")
 
 func (r redisScheduler) ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload []byte) error {
 	if _, exists := r.executors[task]; !exists {
