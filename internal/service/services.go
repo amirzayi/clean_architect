@@ -8,6 +8,7 @@ import (
 	"github.com/amirzayi/clean_architect/pkg/bus"
 	"github.com/amirzayi/clean_architect/pkg/cache"
 	"github.com/amirzayi/clean_architect/pkg/hash"
+	"github.com/amirzayi/clean_architect/pkg/scheduler"
 )
 
 type Dependencies struct {
@@ -16,6 +17,7 @@ type Dependencies struct {
 	AuthManager  auth.Manager
 	Cache        cache.Driver
 	Event        bus.Driver
+	Scheduler    scheduler.Driver
 	Logger       *slog.Logger
 }
 

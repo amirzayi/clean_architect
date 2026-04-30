@@ -13,9 +13,7 @@ type redisCache struct {
 	prefix string
 }
 
-func NewRedisDriver(url string, prefix string) Driver {
-	opt, _ := redis.ParseURL(url)
-	client := redis.NewClient(opt)
+func NewRedisDriver(client *redis.Client, prefix string) Driver {
 	return redisCache{client: client, prefix: prefix}
 }
 
@@ -36,13 +34,4 @@ func (r redisCache) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (r redisCache) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, r.prefix+key).Err()
-}
-
-func (r redisCache) Ping(ctx context.Context) error {
-	status := r.client.Ping(ctx)
-	return status.Err()
-}
-
-func (r redisCache) Close() error {
-	return r.client.Close()
 }

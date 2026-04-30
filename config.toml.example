@@ -28,3 +28,11 @@ directory = ""
 fileCreationMode = 1
 remoteURL = "http://127.0.0.1:8080/ping"
 console = true
+
+[scheduler]
+driver = redis
+ip = 127.0.0.1
+port = 6379
+prefix = task_scheduler
+userName = amir
+password = mirzaei

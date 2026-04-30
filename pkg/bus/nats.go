@@ -8,12 +8,8 @@ type natsBroker struct {
 	client *nats.Conn
 }
 
-func NewNatsBroker(url string) (Driver, error) {
-	c, err := nats.Connect(url)
-	if err != nil {
-		return nil, err
-	}
-	return natsBroker{c}, nil
+func NewNatsBroker(client *nats.Conn) Driver {
+	return natsBroker{client: client}
 }
 
 func (n natsBroker) Publish(subject string, data []byte) error {
@@ -34,9 +30,4 @@ func (n natsBroker) Subscribe(subject string) (<-chan []byte, <-chan error, erro
 		close(errCh)
 	})
 	return dataCh, errCh, err
-}
-
-func (n natsBroker) Close() error {
-	n.client.Close()
-	return nil
 }

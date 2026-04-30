@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type CacheConfig interface {
 	Prefix() string
@@ -22,7 +25,7 @@ func (c cache) Prefix() string {
 }
 
 func (c cache) Driver() string {
-	return c.DriverName
+	return strings.ToLower(strings.TrimSpace(c.DriverName))
 }
 
 func (c cache) ConnectionString() string {
@@ -30,7 +33,7 @@ func (c cache) ConnectionString() string {
 	if c.UserName != "" && c.Password != "" {
 		url = fmt.Sprintf("%s:%s@%s", c.UserName, c.Password, url)
 	}
-	switch c.DriverName {
+	switch c.Driver() {
 	case "redis":
 		return fmt.Sprintf("redis://%s", url)
 	case "memcached":

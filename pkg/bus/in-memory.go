@@ -36,6 +36,7 @@ func (m inMemory) Subscribe(subject string) (<-chan []byte, <-chan error, error)
 	return ch, errCh, nil
 }
 
+// fix: call to close channels
 func (m inMemory) Close() error {
 	for _, ch := range m.data {
 		close(ch)

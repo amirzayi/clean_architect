@@ -14,15 +14,11 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
@@ -34,8 +30,6 @@ import (
 	"github.com/amirzayi/clean_architect/internal/repository"
 	"github.com/amirzayi/clean_architect/internal/service"
 	"github.com/amirzayi/clean_architect/pkg/auth"
-	"github.com/amirzayi/clean_architect/pkg/bus"
-	"github.com/amirzayi/clean_architect/pkg/cache"
 	"github.com/amirzayi/clean_architect/pkg/config"
 	"github.com/amirzayi/clean_architect/pkg/hash"
 	"github.com/amirzayi/clean_architect/pkg/interceptor"
@@ -59,89 +53,50 @@ func main() {
 		slog.Error(err.Error())
 		return
 	}
-
 	if err = run(ctx, cfg); err != nil {
 		slog.Error(err.Error())
 		return
 	}
 }
 
-func CacheDriver(driver, url, prefix string) cache.Driver {
-	switch driver {
-	case "redis":
-		return cache.NewRedisDriver(url, prefix)
-	case "memcached":
-		mc := memcache.New(url)
-		return cache.NewMemCachedDriver(mc, prefix)
-	default:
-		return cache.NewInMemoryDriver()
-	}
-}
-
-func EventDriver(driver, url string, queues []string) (bus.Driver, error) {
-	switch driver {
-	case "redis":
-		return bus.NewRedisBroker(url)
-	case "nats":
-		return bus.NewNatsBroker(url)
-	case "rabbitmq":
-		return bus.NewRabbitBroker(url, queues)
-	default:
-		return bus.NewInMemoryDriver(queues), nil
-	}
-}
-
 func run(ctx context.Context, cfg config.AppConfig) error {
+	deps := dependencies{}
+	sched, err := JobSchedulerDriver(cfg.Scheduler, &deps)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for err = range sched.Start(ctx) {
+			slog.Error(err.Error())
+		}
+	}()
 
 	eventDriver, err := EventDriver(
 		cfg.Event.Driver(),
 		cfg.Event.ConnectionString(),
 		[]string{}, // todo: add some queues
+		&deps,
 	)
 	if err != nil {
 		return err
 	}
 
-	cacheDriver := CacheDriver(
+	cacheDriver, err := CacheDriver(
 		cfg.Cache.Driver(),
 		cfg.Cache.ConnectionString(),
 		cfg.Cache.Prefix(),
+		&deps,
 	)
-	if err = cacheDriver.Ping(ctx); err != nil {
+	if err != nil {
 		return err
 	}
 
-	db, err := sqlx.Connect(cfg.DB.Driver(), cfg.DB.ConnectionString())
+	db, err := deps.getDBAndDoMigrate(cfg.DB.Driver(), cfg.DB.ConnectionString())
 	if err != nil {
-		return fmt.Errorf("failed to connect database: %w", err)
+		return err
 	}
 
-	driver, err := sqlite.WithInstance(db.DB, &sqlite.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to load database driver: %v", err)
-	}
-	migrator, err := migrate.NewWithDatabaseInstance("file://infra/migrations", "sqlite", driver)
-	if err != nil {
-		return fmt.Errorf("failed to setup migrator: %v", err)
-	}
-	if err = migrator.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed to do migrate: %v", err)
-	}
-
-	var logWriters []io.Writer
-	if cfg.Logger.Console() {
-		logWriters = append(logWriters, os.Stdout)
-	}
-	if cfg.Logger.Directory() != "" {
-		fileLogger := logger.NewFileLogger(logger.FileLoggerType(cfg.Logger.FileCreationMode()), cfg.Logger.Directory())
-		logWriters = append(logWriters, fileLogger)
-	}
-	if cfg.Logger.RemoteURL() != "" {
-		remoteLogger := logger.NewRemoteLogger(cfg.Logger.RemoteURL())
-		logWriters = append(logWriters, remoteLogger)
-	}
-
-	logWriter := io.MultiWriter(logWriters...)
+	logWriter := logWriter(cfg.Logger)
 	defaultLogger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{AddSource: true, Level: slog.Level(cfg.Logger.Level())}))
 	// set as global logger, no need to pass logger to another part of application
 	slog.SetDefault(defaultLogger)
@@ -166,6 +121,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		AuthManager:  authManager,
 		Cache:        cacheDriver,
 		Event:        eventDriver,
+		Scheduler:    sched,
 		Logger:       defaultLogger,
 	})
 
@@ -232,14 +188,14 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 			errCh <- fmt.Errorf("failed to run web server: %w", err)
 		}
 	}()
-	slog.Debug("web server initialized on " + cfg.Web.Address())
+	slog.Debug("web server initialized", "address", cfg.Web.Address())
 
 	go func() {
 		if err = grpcServer.Run(); err != nil {
 			errCh <- fmt.Errorf("failed to run grpc server: %w", err)
 		}
 	}()
-	slog.Debug("grpc server initialized on " + cfg.GRPC.Address())
+	slog.Debug("grpc server initialized", "address", cfg.GRPC.Address())
 
 	select {
 	case err = <-errCh:
@@ -249,13 +205,12 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		slog.Debug("received terminate signal")
 	}
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 
 	for _, f := range [...]func() error{
 		webServer.GracefulShutdown,
 		db.Close,
-		cacheDriver.Close,
-		eventDriver.Close,
+		deps.Close,
 		func() error { grpcServer.GracefulShutdown(); return nil },
 	} {
 		wg.Add(1)

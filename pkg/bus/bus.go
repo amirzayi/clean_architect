@@ -9,7 +9,6 @@ import (
 type Driver interface {
 	Publish(subject string, content []byte) error
 	Subscribe(subject string) (dataCh <-chan []byte, errCh <-chan error, err error)
-	Close() error
 }
 
 type EventBus[T any] interface {
