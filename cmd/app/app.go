@@ -177,8 +177,7 @@ func JobSchedulerDriver(driver, url string, deps *dependencies) (scheduler.Drive
 		redisClient, err := deps.getRedisClient(url)
 		return scheduler.NewRedisScheduler(redisClient, time.Second, 1), err
 	default:
-		// return in memory driver instead of nil
-		return nil, nil
+		return scheduler.NewDiscard(), nil
 	}
 }
 
