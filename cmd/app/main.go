@@ -201,14 +201,14 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 			errCh <- fmt.Errorf("failed to run web server: %w", err)
 		}
 	}()
-	slog.Debug("web server initialized on " + cfg.Web.Address())
+	slog.Debug("web server initialized","address", cfg.Web.Address())
 
 	go func() {
 		if err = grpcServer.Run(); err != nil {
 			errCh <- fmt.Errorf("failed to run grpc server: %w", err)
 		}
 	}()
-	slog.Debug("grpc server initialized on " + cfg.GRPC.Address())
+	slog.Debug("grpc server initialized" ,"address" ,  cfg.GRPC.Address())
 
 	select {
 	case err = <-errCh:

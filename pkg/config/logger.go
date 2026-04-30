@@ -17,7 +17,7 @@ type logger struct {
 }
 
 func (l logger) Level() int {
-	return l.LogLevel
+	return l.LogLevel * 4
 }
 
 func (l logger) Directory() string {
