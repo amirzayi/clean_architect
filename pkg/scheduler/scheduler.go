@@ -3,14 +3,12 @@ package scheduler
 import (
 	"context"
 	"time"
-
-	"github.com/amirzayi/clean_architect/pkg/queue"
 )
 
 type Driver interface {
-	ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload queue.Payload) error
+	ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload []byte) error
 	Start(ctx context.Context) <-chan error
 	RegisterExecutor(task string, executor JobExecutor)
 }
 
-type JobExecutor func(ctx context.Context, payload queue.Payload) error
+type JobExecutor func(ctx context.Context, payload []byte) error

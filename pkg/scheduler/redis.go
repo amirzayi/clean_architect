@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amirzayi/clean_architect/pkg/queue"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -36,13 +34,9 @@ func (r redisScheduler) RegisterExecutor(task string, executor JobExecutor) {
 
 var ErrExecutorNotDefined = errors.New("executor not defined for this task")
 
-func (r redisScheduler) ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload queue.Payload) error {
+func (r redisScheduler) ScheduleTask(ctx context.Context, task string, scheduleAt time.Time, payload []byte) error {
 	if _, exists := r.executors[task]; !exists {
 		return ErrExecutorNotDefined
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
 	}
 	pipe := r.client.Pipeline()
 	key := fmt.Sprintf("task_%s_%d_%d", task, scheduleAt.Unix(), rand.IntN(100))
@@ -50,18 +44,20 @@ func (r redisScheduler) ScheduleTask(ctx context.Context, task string, scheduleA
 		Score:  float64(scheduleAt.Unix()),
 		Member: key,
 	})
-	pipe.Set(ctx, key, data, 0)
-	_, err = pipe.Exec(ctx)
+	pipe.Set(ctx, key, payload, 0)
+	_, err := pipe.Exec(ctx)
 	return err
 }
 
 func (r redisScheduler) Start(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 	go func() {
-		var payload queue.Payload
-		defer close(errCh)
 		t := time.NewTicker(r.runEvery)
-		defer t.Stop()
+		defer func() {
+			close(r.sem)
+			close(errCh)
+			t.Stop()
+		}()
 		for {
 			select {
 			case <-ctx.Done():
@@ -69,6 +65,7 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 				return
 
 			case <-time.NewTicker(time.Second).C:
+				r.sem <- struct{}{}
 				tasks, err := r.client.ZRangeByScore(ctx, "scheduler", &redis.ZRangeBy{
 					Min: "-inf",
 					Max: strconv.FormatInt(time.Now().Unix(), 10),
@@ -89,31 +86,26 @@ func (r redisScheduler) Start(ctx context.Context) <-chan error {
 						errCh <- err
 						continue
 					}
-					if err = json.Unmarshal(data, &payload); err != nil {
-						errCh <- err
-						continue
-					}
-					r.sem <- struct{}{}
 					go func() {
 						defer func() {
-							if err = r.client.ZRem(ctx, "scheduler", task).Err(); err != nil {
-								errCh <- err
-							}
 							<-r.sem
 						}()
-						if err = executor(ctx, payload); err != nil {
-							err = r.client.ZAdd(ctx, "scheduler", redis.Z{
+						if err = r.client.ZRem(ctx, "scheduler", task).Err(); err != nil {
+							errCh <- err
+						}
+						if err = executor(ctx, data); err != nil {
+							errCh <- fmt.Errorf("failed to execute task, %w", err)
+							err = r.client.ZAdd(ctx, "scheduler-retry", redis.Z{
 								Score:  float64(time.Now().Unix()),
 								Member: task,
 							}).Err()
 							if err != nil {
-								errCh <- err
+								errCh <- fmt.Errorf("failed to add retry task, %w", err)
 							}
-							errCh <- fmt.Errorf("failed to execute task, %w", err)
 							return
 						}
 						if err = r.client.Del(ctx, task).Err(); err != nil {
-							errCh <- err
+							errCh <- fmt.Errorf("failed to remove task, %w", err)
 						}
 					}()
 				}

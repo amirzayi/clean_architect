@@ -7,28 +7,17 @@ import (
 )
 
 type rabbit struct {
-	conn *amqp.Connection
-	ch   *amqp.Channel
+	ch *amqp.Channel
 }
 
-func NewRabbitBroker(url string, queues []string) (Driver, error) {
-	conn, err := amqp.Dial(url)
-	if err != nil {
-		return nil, err
-	}
-
-	channel, err := conn.Channel()
-	if err != nil {
-		return nil, err
-	}
-
+func NewRabbitBroker(channel *amqp.Channel, queues []string) (Driver, error) {
 	for _, queue := range queues {
 		_, err := channel.QueueDeclare(queue, true, true, false, false, nil)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return rabbit{conn: conn, ch: channel}, nil
+	return rabbit{ch: channel}, nil
 }
 
 func (r rabbit) Publish(queue string, data []byte) error {

@@ -19,7 +19,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jmoiron/sqlx"
@@ -38,7 +37,6 @@ import (
 	"github.com/amirzayi/clean_architect/pkg/hash"
 	"github.com/amirzayi/clean_architect/pkg/interceptor"
 	"github.com/amirzayi/clean_architect/pkg/logger"
-	"github.com/amirzayi/clean_architect/pkg/queue"
 	"github.com/amirzayi/clean_architect/pkg/server/grpcserver"
 	"github.com/amirzayi/clean_architect/pkg/server/webserver"
 	"github.com/amirzayi/rahjoo/middleware"
@@ -71,14 +69,15 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		slog.Error(err.Error())
 		return err
 	}
-	sched.RegisterExecutor("printer", func(_ context.Context, payload queue.Payload) error {
-		fmt.Println("hi there! how you doing?", payload.Data)
+	sched.RegisterExecutor("printer", func(_ context.Context, payload []byte) error {
+		fmt.Println("hi there! how you doing?", string(payload))
+		time.Sleep(time.Second * 3)
 		return nil
 	})
 	err = errors.Join(
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "amir"}),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mohammad"}),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), queue.Payload{Data: "mirzaei"}),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("amir")),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mohammad")),
+		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mirzaei")),
 	)
 	if err != nil {
 		slog.Error(err.Error())
@@ -113,12 +112,11 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
 	}
-
-	driver, err := sqlite.WithInstance(db.DB, &sqlite.Config{})
+	migratorDriver, err := dbMigratorDriver(cfg.DB.Driver(), db.DB)
 	if err != nil {
-		return fmt.Errorf("failed to load database driver: %v", err)
+		return fmt.Errorf("failed to load database migrator driver: %v", err)
 	}
-	migrator, err := migrate.NewWithDatabaseInstance("file://infra/migrations", "sqlite", driver)
+	migrator, err := migrate.NewWithDatabaseInstance("file://infra/migrations", cfg.DB.Driver(), migratorDriver)
 	if err != nil {
 		return fmt.Errorf("failed to setup migrator: %v", err)
 	}
@@ -126,20 +124,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		return fmt.Errorf("failed to do migrate: %v", err)
 	}
 
-	var logWriters []io.Writer
-	if cfg.Logger.Console() {
-		logWriters = append(logWriters, os.Stdout)
-	}
-	if cfg.Logger.Directory() != "" {
-		fileLogger := logger.NewFileLogger(logger.FileLoggerType(cfg.Logger.FileCreationMode()), cfg.Logger.Directory())
-		logWriters = append(logWriters, fileLogger)
-	}
-	if cfg.Logger.RemoteURL() != "" {
-		remoteLogger := logger.NewRemoteLogger(cfg.Logger.RemoteURL())
-		logWriters = append(logWriters, remoteLogger)
-	}
-
-	logWriter := io.MultiWriter(logWriters...)
+	logWriter := logWriter(cfg.Logger)
 	defaultLogger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{AddSource: true, Level: slog.Level(cfg.Logger.Level())}))
 	// set as global logger, no need to pass logger to another part of application
 	slog.SetDefault(defaultLogger)
@@ -164,6 +149,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		AuthManager:  authManager,
 		Cache:        cacheDriver,
 		Event:        eventDriver,
+		Scheduler:    sched,
 		Logger:       defaultLogger,
 	})
 
@@ -247,7 +233,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		slog.Debug("received terminate signal")
 	}
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 
 	for _, f := range [...]func() error{
 		webServer.GracefulShutdown,
