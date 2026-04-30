@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
@@ -64,29 +63,15 @@ func main() {
 
 func run(ctx context.Context, cfg config.AppConfig) error {
 	deps := dependencies{}
-	sched, err := JobSchedulerDriver("redis", "redis://localhost:6379", &deps)
+	sched, err := JobSchedulerDriver(cfg.Scheduler.Driver(), cfg.Scheduler.ConnectionString(), &deps)
 	if err != nil {
-		slog.Error(err.Error())
 		return err
 	}
-	sched.RegisterExecutor("printer", func(_ context.Context, payload []byte) error {
-		fmt.Println("hi there! how you doing?", string(payload))
-		time.Sleep(time.Second * 3)
-		return nil
-	})
-	err = errors.Join(
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("amir")),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mohammad")),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mirzaei")),
-	)
-	if err != nil {
-		slog.Error(err.Error())
-		return err
-	}
-	slog.Warn("did register")
-	for err = range sched.Start(ctx) {
-		slog.Error(err.Error())
-	}
+	go func() {
+		for err = range sched.Start(ctx) {
+			slog.Error(err.Error())
+		}
+	}()
 
 	eventDriver, err := EventDriver(
 		cfg.Event.Driver(),

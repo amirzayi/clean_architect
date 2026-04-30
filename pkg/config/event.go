@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 )
 
 type EventConfig interface {
@@ -18,7 +19,7 @@ type event struct {
 }
 
 func (e event) Driver() string {
-	return e.DriverName
+	return strings.ToLower(strings.TrimSpace(e.DriverName))
 }
 
 func (e event) ConnectionString() string {
@@ -26,7 +27,7 @@ func (e event) ConnectionString() string {
 	if e.UserName != "" && e.Password != "" {
 		url = fmt.Sprintf("%s:%s@%s", e.UserName, e.Password, url)
 	}
-	switch e.DriverName {
+	switch e.Driver() {
 	case "rabbitmq":
 		return fmt.Sprintf("amqp://%s", url)
 	case "redis":

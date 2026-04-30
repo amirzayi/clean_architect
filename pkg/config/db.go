@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 type DBConfig interface {
@@ -21,12 +22,12 @@ type db struct {
 }
 
 func (db db) Driver() string {
-	return db.DriverName
+	return strings.ToLower(strings.TrimSpace(db.DriverName))
 }
 
 func (db db) ConnectionString() string {
 	// todo: add mongodb connection string
-	switch db.DriverName {
+	switch db.Driver() {
 	case "postgres":
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
 			db.UserName,

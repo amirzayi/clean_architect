@@ -117,8 +117,21 @@ func (d *dependencies) Close() error {
 	if d.natsClient != nil {
 		d.natsClient.Close()
 	}
+	var clients []io.Closer
+	if d.redisClient != nil {
+		clients = append(clients, d.redisClient)
+	}
+	if d.memcacheClient != nil {
+		clients = append(clients, d.memcacheClient)
+	}
+	if d.rabbitmqChannel != nil {
+		clients = append(clients, d.rabbitmqChannel)
+	}
+	if d.rabbitmqConnection != nil {
+		clients = append(clients, d.rabbitmqConnection)
+	}
 	var err error
-	for _, client := range []io.Closer{d.redisClient, d.memcacheClient, d.rabbitmqChannel, d.rabbitmqConnection} {
+	for _, client := range clients {
 		if client != nil {
 			err = errors.Join(err, client.Close())
 		}
