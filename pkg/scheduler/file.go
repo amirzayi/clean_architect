@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 const taskDirectory = "task_scheduler"
 const executingTaskDirectory = "executing_task_scheduler"
 const failedTaskDirectory = "failed_task_scheduler"
+const taskFileTimeFormat = time.RFC3339Nano
 
 type file struct{}
 
@@ -21,11 +23,20 @@ func NewFileScheduler() Storage {
 	return file{}
 }
 
-func (file) writeFile(filePath string, payload []byte) error {
+// checkDirExist will check directory exists to prevent write on not existed directory
+func checkDirExist(filePath string) error {
 	if _, err := os.Stat(filepath.Dir(filePath)); os.IsNotExist(err) {
 		if err = os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (file) Store(_ context.Context, taskName string, scheduleAt time.Time, payload []byte) error {
+	filePath := filepath.Join(taskDirectory, fmt.Sprintf("%s_%s.task", taskName, scheduleAt.Format(taskFileTimeFormat)))
+	if err := checkDirExist(filePath); err != nil {
+		return err
 	}
 	f, err := os.Create(filePath)
 	if err != nil {
@@ -35,12 +46,8 @@ func (file) writeFile(filePath string, payload []byte) error {
 	return err
 }
 
-func (f file) Store(_ context.Context, taskName string, scheduleAt time.Time, payload []byte) error {
-	filePath := filepath.Join(taskDirectory, fmt.Sprintf("%s_%s.task", taskName, scheduleAt.Format(time.RFC3339Nano)))
-	return f.writeFile(filePath, payload)
-}
-
-func (f file) Retrieve(ctx context.Context) (string, string, []byte, error) {
+func (file) Retrieve(ctx context.Context) (string, string, []byte, error) {
+	// search task file
 	files, err := filepath.Glob(filepath.Join(taskDirectory, "*.task"))
 	if err != nil {
 		return "", "", nil, err
@@ -51,9 +58,31 @@ func (f file) Retrieve(ctx context.Context) (string, string, []byte, error) {
 
 	slices.Sort(files)
 	firstFilePath := files[0]
+
+	// file name be like DoSomeJob_2026-05-01T19:20:39.35869046+03:30.task
 	fileName := filepath.Base(firstFilePath)
+	// task name is equal to DoSomeJob
 	taskName := strings.Split(fileName, "_")[0]
-	firstFile, err := os.Open(firstFilePath)
+	// try to parse schedule time of file name
+	scheduleTime := strings.TrimRight(strings.TrimLeft(fileName, fmt.Sprintf("%s_", taskName)), ".task")
+	scheduledAt, err := time.Parse(taskFileTimeFormat, scheduleTime)
+	if err != nil {
+		// schedule time is not standard, so ignore task and delete them to prevent proccess it later
+		return "", "", nil, errors.Join(err, os.Remove(firstFilePath))
+	}
+	// prevent to execute task early
+	if scheduledAt.After(time.Now()) {
+		return "", "", nil, nil
+	}
+	executingFilePath := filepath.Join(executingTaskDirectory, fileName)
+	if err = checkDirExist(executingFilePath); err != nil {
+		return "", "", nil, err
+	}
+	// move task to temporary directory to prevent concurrent execution in another goroutines
+	if err = os.Rename(firstFilePath, executingFilePath); err != nil {
+		return "", "", nil, err
+	}
+	firstFile, err := os.Open(executingFilePath)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -61,31 +90,16 @@ func (f file) Retrieve(ctx context.Context) (string, string, []byte, error) {
 	if err != nil {
 		return "", "", nil, err
 	}
-	executingFilePath := filepath.Join(executingTaskDirectory, fileName)
-	if err = f.writeFile(executingFilePath, data); err != nil {
-		return "", "", nil, err
-	}
-	if err = os.Remove(firstFilePath); err != nil {
-		return "", "", nil, err
-	}
 	return fileName, taskName, data, nil
 }
 
-func (f file) Failure(ctx context.Context, fileName string) error {
+func (file) Failure(ctx context.Context, fileName string) error {
 	filePath := filepath.Join(executingTaskDirectory, fileName)
-	executing, err := os.Open(filePath)
-	if err != nil {
+	failedTaskFilePath := filepath.Join(failedTaskDirectory, fileName)
+	if err := checkDirExist(failedTaskFilePath); err != nil {
 		return err
 	}
-	data, err := io.ReadAll(executing)
-	if err != nil {
-		return err
-	}
-	err = f.writeFile(filepath.Join(failedTaskDirectory, fileName), data)
-	if err != nil {
-		return err
-	}
-	return os.Remove(filePath)
+	return os.Rename(filePath, failedTaskFilePath)
 }
 
 func (file) Done(ctx context.Context, fileName string) error {
