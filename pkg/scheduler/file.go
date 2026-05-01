@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,10 +18,12 @@ const executingTaskDirectory = "executing_task_scheduler"
 const failedTaskDirectory = "failed_task_scheduler"
 const taskFileTimeFormat = time.RFC3339Nano
 
-type file struct{}
+type file struct {
+	mu *sync.Mutex
+}
 
 func NewFileScheduler() Storage {
-	return file{}
+	return file{mu: new(sync.Mutex)}
 }
 
 // checkDirExist will check directory exists to prevent write on not existed directory
@@ -46,7 +49,9 @@ func (file) Store(_ context.Context, taskName string, scheduleAt time.Time, payl
 	return err
 }
 
-func (file) Retrieve(ctx context.Context) (string, string, []byte, error) {
+func (f file) Retrieve(ctx context.Context) (string, string, []byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	// search task file
 	files, err := filepath.Glob(filepath.Join(taskDirectory, "*.task"))
 	if err != nil {

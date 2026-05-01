@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	chim "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
@@ -71,21 +70,6 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 			slog.Error(err.Error())
 		}
 	}()
-
-	sched.RegisterExecutor("printer", func(_ context.Context, payload []byte) error {
-		fmt.Println("hi there! how you doing?", string(payload))
-		time.Sleep(time.Second * 1)
-		return nil
-	})
-	err = errors.Join(
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("amir")),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mohammad")),
-		sched.ScheduleTask(ctx, "printer", time.Now().Add(time.Second*5), []byte("mirzaei")),
-	)
-	if err != nil {
-		slog.Error(err.Error())
-		return err
-	}
 
 	eventDriver, err := EventDriver(
 		cfg.Event.Driver(),
