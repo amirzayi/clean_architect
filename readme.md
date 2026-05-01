@@ -26,15 +26,15 @@ The project follows a typical Clean Architecture organization with these layers:
 
 ```
 project/
-├── api/              
+├── api/
 │   ├── grpc/               # grpc service handlers
 │   ├── http/
 │   │   ├── handler/        # http handlers
-│   │   ├── middleware/     # http middlewares 
+│   │   ├── middleware/     # http middlewares
 │   ├── proto/              # protobuf schema definition
 ├── cmd/                    # Main application entry point and dependency injection
-│   ├── app/                # web application 
-│   ├── cli/                # cli application 
+│   ├── app/                # web application
+│   ├── cli/                # cli application
 ├── internal/
 │   ├── delivery/           # Interface adapters (HTTP handlers, gRPC, etc.)
 │   ├── domain/             # Enterprise business rules
@@ -45,13 +45,20 @@ project/
 │   └── bus/                # message broker
 │   └── cache/              # cache
 │   └── config/             # app configuration
+│   └── errs/               # human readable internal error conversion
 │   └── hash/               # hashing password
 │   └── interceptor/        # grpc interceptors
 │   └── jsonutil/           # json utilities
 │   └── logger/             # log
+│   └── mongoutil/          # mongo utilities(paginate query builder,...)
+│   └── paginate/           # pagination, sorting, filter
+│   └── scheduler/          # schedule task execution at specific time
 │   └── server/
 │   │   └── grpc/           # grpc server manager
 │   │   └── http/           # http server manager
+│   └── sqlutil/            # sql utilities(paginate query builder,...)
+│   └── synq/               # sync cache via crud operations
+
 ```
 
 ## Drivers and Plugins
@@ -74,6 +81,10 @@ This project supports multiple implementations (drivers) for various components:
 - **In-Memory**
 - **Nats**
 
+### Task Scheduler
+- **Redis**
+- **MySQL, Postgresql, Sqlite**
+
 ### Auth
 - **JWT**
 - **Paseto**
@@ -81,6 +92,12 @@ This project supports multiple implementations (drivers) for various components:
 ### Logger
 - **File**
 - **External Web Service**
+
+### Pagination, Sorting, Filters
+paginate, sort, filter incoming list requests for sql and MongoDB
+
+### Error conversion
+convert internal errors to human readable response
 
 ## Getting Started
 
@@ -136,6 +153,21 @@ event:
   port: 1567
   userName: amir
   password: mirzaei
+
+scheduler:
+  driver: redis # or "sqlite"
+  ip: 127.0.0.1
+  port: 6379
+  prefix: task_scheduler
+  userName: amir
+  password: mirzaei
+
+logger:
+  level: 0 # debug: -1, info: 0, warn: 1, error: 2
+  directory: log # store logs on specified directory
+  fileCreationMode: 1 # 0: won't store in files, 1: keep in single created file, 2: keep in seperated hourly created files, 3: keep in seperated daily created files
+  remoteURL: http://127.0.0.1:8080/ping # send logs to http address
+  console: true # print on stdout
 ```
 
 ## Testing
