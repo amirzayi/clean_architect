@@ -151,24 +151,18 @@ func (d *dependencies) Close() error {
 	if d.natsClient != nil {
 		d.natsClient.Close()
 	}
-	var clients []io.Closer
+	var err error
 	if d.redisClient != nil {
-		clients = append(clients, d.redisClient)
+		err = errors.Join(err, d.redisClient.Close())
 	}
 	if d.memcacheClient != nil {
-		clients = append(clients, d.memcacheClient)
+		err = errors.Join(err, d.memcacheClient.Close())
 	}
 	if d.rabbitmqChannel != nil {
-		clients = append(clients, d.rabbitmqChannel)
+		err = errors.Join(err, d.rabbitmqChannel.Close())
 	}
 	if d.rabbitmqConnection != nil {
-		clients = append(clients, d.rabbitmqConnection)
-	}
-	var err error
-	for _, client := range clients {
-		if client != nil {
-			err = errors.Join(err, client.Close())
-		}
+		err = errors.Join(err, d.rabbitmqConnection.Close())
 	}
 	return err
 }
@@ -206,16 +200,24 @@ func EventDriver(driver, url string, queues []string, deps *dependencies) (bus.D
 }
 
 func JobSchedulerDriver(cfg config.SchedulerConfig, deps *dependencies) (scheduler.Driver, error) {
+	var storage scheduler.Storage
 	switch cfg.Driver() {
 	case "redis":
 		redisClient, err := deps.getRedisClient(cfg.ConnectionString())
-		return scheduler.NewRedisScheduler(redisClient, cfg.RunEvery(), cfg.Concurrency()), err
+		if err != nil {
+			return nil, err
+		}
+		storage = scheduler.NewRedisStorage(redisClient)
 	case "sqlite":
 		db, err := deps.getDBAndDoMigrate(cfg.Driver(), cfg.ConnectionString())
-		return scheduler.NewSQLScheduler(db, cfg.RunEvery(), cfg.Concurrency()), err
+		if err != nil {
+			return nil, err
+		}
+		storage = scheduler.NewSQLStorage(db)
 	default:
 		return scheduler.NewDiscard(), nil
 	}
+	return scheduler.NewScheduler(storage, cfg.RunEvery(), cfg.Concurrency()), nil
 }
 
 func logWriter(cfg config.LoggerConfig) io.Writer {
