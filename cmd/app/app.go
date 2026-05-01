@@ -214,6 +214,8 @@ func JobSchedulerDriver(cfg config.SchedulerConfig, deps *dependencies) (schedul
 			return nil, err
 		}
 		storage = scheduler.NewSQLStorage(db)
+	case "file":
+		storage = scheduler.NewFileScheduler()
 	default:
 		return scheduler.NewDiscard(), nil
 	}

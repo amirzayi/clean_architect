@@ -18,7 +18,7 @@ type JobExecutor func(ctx context.Context, payload []byte) error
 
 type Storage interface {
 	Store(ctx context.Context, taskName string, scheduleAt time.Time, payload []byte) error
-	Retrieve(ctx context.Context) (taskIDstring, taskName string, data []byte, err error)
+	Retrieve(ctx context.Context) (taskID, taskName string, data []byte, err error)
 	Failure(ctx context.Context, taskID string) error
 	Done(ctx context.Context, taskID string) error
 }

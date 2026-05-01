@@ -31,7 +31,7 @@ func (s redisStorage) Store(ctx context.Context, taskName string, scheduleAt tim
 	return err
 }
 
-func (s redisStorage) Retrieve(ctx context.Context) (taskID string, taskName string, data []byte, err error) {
+func (s redisStorage) Retrieve(ctx context.Context) (taskID, taskName string, data []byte, err error) {
 	taskIDs, err := s.client.ZRangeByScore(ctx, "scheduler", &redis.ZRangeBy{
 		Min:   "-inf",
 		Max:   strconv.FormatInt(time.Now().Unix(), 10),
@@ -55,7 +55,7 @@ func (s redisStorage) Retrieve(ctx context.Context) (taskID string, taskName str
 }
 
 func (s redisStorage) Failure(ctx context.Context, taskID string) error {
-	return s.client.ZAdd(ctx, "scheduler-retry", redis.Z{
+	return s.client.ZAdd(ctx, "scheduler-failed", redis.Z{
 		Score:  float64(time.Now().Unix()),
 		Member: taskID,
 	}).Err()

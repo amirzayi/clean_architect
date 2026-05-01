@@ -52,7 +52,7 @@ project/
 │   └── logger/             # log
 │   └── mongoutil/          # mongo utilities(paginate query builder,...)
 │   └── paginate/           # pagination, sorting, filter
-│   └── scheduler/          # schedule task execution at specific time
+│   └── scheduler/          # persistent task scheduler
 │   └── server/
 │   │   └── grpc/           # grpc server manager
 │   │   └── http/           # http server manager
@@ -84,6 +84,7 @@ This project supports multiple implementations (drivers) for various components:
 ### Task Scheduler
 - **Redis**
 - **MySQL, Postgresql, Sqlite**
+- **File**
 
 ### Auth
 - **JWT**
@@ -155,7 +156,7 @@ event:
   password: mirzaei
 
 scheduler:
-  driver: redis # or "sqlite"
+  driver: redis # or "sqlite" or "file"
   ip: 127.0.0.1
   port: 6379
   prefix: task_scheduler
