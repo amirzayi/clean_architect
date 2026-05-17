@@ -5,16 +5,21 @@ import (
 	"context"
 	"encoding/gob"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 type redisQueue struct {
-	client *redis.Client
+	client   *redis.Client
+	runEvery time.Duration
 }
 
-func NewRedisQueue(client *redis.Client) Driver {
-	return redisQueue{client: client}
+func NewRedisQueue(client *redis.Client, runEvery time.Duration) Driver {
+	return redisQueue{
+		client:   client,
+		runEvery: runEvery,
+	}
 }
 
 func (q redisQueue) EnQueue(ctx context.Context, data Payload) error {
@@ -31,21 +36,30 @@ func (q redisQueue) DeQueue(ctx context.Context) (<-chan Payload, <-chan error) 
 	var payload Payload
 
 	go func() {
+		tick := time.NewTicker(q.runEvery)
+		defer func() {
+			defer close(outCh)
+			defer close(errCh)
+			tick.Stop()
+		}()
 		for {
-			data, err := q.client.BLPop(ctx, 0, "job_queue").Result()
-			if err != nil {
-				errCh <- err
-				continue
+			select {
+			case <-ctx.Done():
+				return
+
+			case <-tick.C:
+				data, err := q.client.LPop(ctx, "job_queue").Result()
+				if err != nil {
+					errCh <- err
+					continue
+				}
+				err = gob.NewDecoder(strings.NewReader(data)).Decode(&payload)
+				if err != nil {
+					errCh <- err
+					continue
+				}
+				outCh <- payload
 			}
-			if len(data) == 0 {
-				continue
-			}
-			err = gob.NewDecoder(strings.NewReader(data[1])).Decode(&payload)
-			if err != nil {
-				errCh <- err
-				continue
-			}
-			outCh <- payload
 		}
 	}()
 
