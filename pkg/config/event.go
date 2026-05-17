@@ -16,6 +16,7 @@ type event struct {
 	Port       uint   `default:"" json:"port" yaml:"port" toml:"port"`
 	UserName   string `default:"" json:"userName" yaml:"userName" toml:"userName"`
 	Password   string `default:"" json:"password" yaml:"password" toml:"password"`
+	DBNumber   uint   `default:"" json:"db" yaml:"db" toml:"db"`
 }
 
 func (e event) Driver() string {
@@ -31,7 +32,7 @@ func (e event) ConnectionString() string {
 	case "rabbitmq":
 		return fmt.Sprintf("amqp://%s", url)
 	case "redis":
-		return fmt.Sprintf("redis://%s", url)
+		return getRedisURL(e.IP, fmt.Sprint(e.Port), e.UserName, e.Password, fmt.Sprint(e.DBNumber))
 	case "nats":
 		return fmt.Sprintf("nats://%s", url)
 	default:

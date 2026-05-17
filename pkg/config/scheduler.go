@@ -18,13 +18,13 @@ type scheduler struct {
 	DriverName       string `default:"" json:"driver" yaml:"driver" toml:"driver"`
 	IP               string `default:"" json:"ip" yaml:"ip" toml:"ip"`
 	Port             uint   `default:"" json:"port" yaml:"port" toml:"port"`
-	PrefixName       string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
 	UserName         string `default:"" json:"userName" yaml:"userName" toml:"userName"`
 	Password         string `default:"" json:"password" yaml:"password" toml:"password"`
+	DBNumber         uint   `default:"" json:"db" yaml:"db" toml:"db"`
 	Name             string `default:"clean-architect" json:"name" yaml:"name" toml:"name"`
 	Path             string `default:"." json:"path" yaml:"path" toml:"path"`
-	ConcurrencyLevel int    `default:"." json:"concurrency" yaml:"concurrency" toml:"concurrency"`
-	RunEverySeconds  int    `default:"." json:"run_every_seconds" yaml:"run_every_seconds" toml:"run_every_seconds"`
+	ConcurrencyLevel int    `default:"2" json:"concurrency" yaml:"concurrency" toml:"concurrency"`
+	RunEverySeconds  int    `default:"1" json:"run_every_seconds" yaml:"run_every_seconds" toml:"run_every_seconds"`
 }
 
 func (s scheduler) Driver() string {
@@ -32,13 +32,9 @@ func (s scheduler) Driver() string {
 }
 
 func (s scheduler) ConnectionString() string {
-	url := fmt.Sprintf("%s:%d", s.IP, s.Port)
-	if s.UserName != "" && s.Password != "" {
-		url = fmt.Sprintf("%s:%s@%s", s.UserName, s.Password, url)
-	}
 	switch s.Driver() {
 	case "redis":
-		return fmt.Sprintf("redis://%s", url)
+		return getRedisURL(s.IP, fmt.Sprint(s.Port), s.UserName, s.Password, fmt.Sprint(s.DBNumber))
 	case "postgres":
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
 			s.UserName,

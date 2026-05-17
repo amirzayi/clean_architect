@@ -18,6 +18,7 @@ type cache struct {
 	PrefixName string `default:"" json:"prefix" yaml:"prefix" toml:"prefix"`
 	UserName   string `default:"" json:"userName" yaml:"userName" toml:"userName"`
 	Password   string `default:"" json:"password" yaml:"password" toml:"password"`
+	DBNumber   uint   `default:"" json:"db" yaml:"db" toml:"db"`
 }
 
 func (c cache) Prefix() string {
@@ -35,7 +36,7 @@ func (c cache) ConnectionString() string {
 	}
 	switch c.Driver() {
 	case "redis":
-		return fmt.Sprintf("redis://%s", url)
+		return getRedisURL(c.IP, fmt.Sprint(c.Port), c.UserName, c.Password, fmt.Sprint(c.DBNumber))
 	case "memcached":
 		return url
 	default:

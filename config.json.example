@@ -37,5 +37,14 @@
     "prefix": "task_scheduler",
     "userName": "amir",
     "password": "mirzaei"
+  },
+  "queue": {
+    "driver": "inmemory",
+    "ip": "",
+    "port": 0,
+    "userName": "",
+    "password": "",
+    "db": "",
+    "run_every_milliseconds": 1000
   }
 }

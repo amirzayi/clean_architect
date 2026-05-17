@@ -36,3 +36,12 @@ scheduler:
   prefix: task_scheduler
   userName: amir
   password: mirzaei
+
+queue
+  driver: inmemory
+  ip: 127.0.0.1
+  port: 6379
+  userName: amir
+  password: mirzaei
+  db: 1
+  run_every_milliseconds: 1000

@@ -36,3 +36,13 @@ port = 6379
 prefix = task_scheduler
 userName = amir
 password = mirzaei
+
+[queue]
+driver = redis
+ip = 127.0.0.1
+port = 6379
+prefix = task_scheduler
+userName = amir
+password = mirzaei
+db = 1
+run_every_milliseconds = 1000

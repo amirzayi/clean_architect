@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,7 @@ type AppConfig struct {
 	Cache     CacheConfig
 	Event     EventConfig
 	Scheduler SchedulerConfig
+	Queue     QueueConfig
 }
 
 // appConfig holds the configurations for the entire application, including
@@ -42,6 +44,7 @@ type appConfig struct {
 	Cache     cache     `json:"cache" yaml:"cache" toml:"cache"`
 	Event     event     `json:"event" yaml:"event" toml:"event"`
 	Scheduler scheduler `json:"scheduler" yaml:"scheduler" toml:"scheduler"`
+	Queue     queue     `json:"queue" yaml:"queue" toml:"queue"`
 }
 
 // LoadConfig will return AppConfig which that values are filled by given config file's address.
@@ -89,6 +92,7 @@ func (cfg appConfig) toAppConfig() AppConfig {
 		Cache:     cfg.Cache,
 		Event:     cfg.Event,
 		Scheduler: cfg.Scheduler,
+		Queue:     cfg.Queue,
 	}
 }
 
@@ -99,4 +103,21 @@ func LoadConfigOrDefault(fileAddress string) (AppConfig, error) {
 		err = defaults.Set(&cfg)
 	}
 	return cfg.toAppConfig(), err
+}
+
+func getRedisURL(ip, port, username, password, db string) string {
+	var url strings.Builder
+	url.WriteString("redis://")
+	if username != "" && password != "" {
+		url.WriteString(username)
+		url.WriteString(":")
+		url.WriteString(password)
+		url.WriteString("@")
+	}
+	url.WriteString(net.JoinHostPort(ip, port))
+	if db != "" {
+		url.WriteString("/")
+		url.WriteString(db)
+	}
+	return url.String()
 }
