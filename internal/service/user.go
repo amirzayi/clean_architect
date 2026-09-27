@@ -28,18 +28,17 @@ type User interface {
 
 type user struct {
 	db       repository.User
-	cache    cache.Cache[domain.User]
-	eventBus bus.EventBus[domain.User]
+	cache    *cache.Cache
+	eventBus *bus.EventBus
 	logger   *slog.Logger
-	dbcache  synq.CacheSync[domain.User]
+	dbcache  synq.CacheSync
 }
 
-func NewUserService(db repository.User, cacheDriver cache.Driver, eventDriver bus.Driver, logger *slog.Logger) User {
-	cache := cache.New[domain.User](cacheDriver, "user", time.Hour)
+func NewUserService(db repository.User, cache *cache.Cache, eventBus *bus.EventBus, logger *slog.Logger) User {
 	return &user{
 		db:       db,
 		cache:    cache,
-		eventBus: bus.New[domain.User](eventDriver),
+		eventBus: eventBus,
 		logger:   logger,
 		dbcache:  synq.New(cache, logger),
 	}
@@ -52,7 +51,7 @@ func (u *user) Create(ctx context.Context, user domain.User) (domain.User, error
 
 	err := u.dbcache.SetAsync(user.ID.String(), user, func() error {
 		return u.db.Create(ctx, user)
-	})
+	}, time.Hour)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAlreadyExists) {
 			return domain.User{}, errs.New(err, errs.CodeExisted)
@@ -66,7 +65,7 @@ func (u *user) Create(ctx context.Context, user domain.User) (domain.User, error
 func (u *user) GetByEmail(ctx context.Context, email string) (domain.User, error) {
 	user, err := u.dbcache.GetAsync(ctx, email, func() (domain.User, error) {
 		return u.db.GetByEmail(ctx, email)
-	})
+	}, time.Minute)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return domain.User{}, errs.NotFound("user")
@@ -103,7 +102,7 @@ func (u *user) Delete(ctx context.Context, id uuid.UUID) error {
 func (u *user) Update(ctx context.Context, user domain.User) error {
 	err := u.dbcache.SetAsync(user.ID.String(), user, func() error {
 		return u.db.Update(ctx, user)
-	})
+	}, time.Minute)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return errs.NotFound("user")
@@ -117,7 +116,7 @@ func (u *user) Update(ctx context.Context, user domain.User) error {
 func (u *user) GetByID(ctx context.Context, id uuid.UUID) (domain.User, error) {
 	user, err := u.dbcache.GetAsync(ctx, id.String(), func() (domain.User, error) {
 		return u.db.GetByID(ctx, id)
-	})
+	}, time.Minute)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return user, errs.NotFound("user")

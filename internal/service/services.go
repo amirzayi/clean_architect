@@ -15,8 +15,8 @@ type Dependencies struct {
 	Repositories *repository.Repositories
 	Hasher       hash.PasswordHasher
 	AuthManager  auth.Manager
-	Cache        cache.Driver
-	Event        bus.Driver
+	Cache        *cache.Cache
+	Event        *bus.EventBus
 	Scheduler    scheduler.Driver
 	Logger       *slog.Logger
 }

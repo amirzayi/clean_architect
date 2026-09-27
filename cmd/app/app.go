@@ -20,7 +20,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
+	sqlite "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/jmoiron/sqlx"
 	"github.com/nats-io/nats.go"
 	amqp "github.com/rabbitmq/amqp091-go"

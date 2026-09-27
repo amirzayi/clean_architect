@@ -20,16 +20,18 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
-	_ "modernc.org/sqlite"
 
 	"github.com/amirzayi/clean_architect/internal/delivery"
 	"github.com/amirzayi/clean_architect/internal/repository"
 	"github.com/amirzayi/clean_architect/internal/service"
 	"github.com/amirzayi/clean_architect/pkg/auth"
+	"github.com/amirzayi/clean_architect/pkg/bus"
+	"github.com/amirzayi/clean_architect/pkg/cache"
 	"github.com/amirzayi/clean_architect/pkg/config"
 	"github.com/amirzayi/clean_architect/pkg/hash"
 	"github.com/amirzayi/clean_architect/pkg/interceptor"
@@ -97,6 +99,7 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 	}
 
 	logWriter := logWriter(cfg.Logger)
+
 	defaultLogger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{AddSource: true, Level: slog.Level(cfg.Logger.Level())}))
 	// set as global logger, no need to pass logger to another part of application
 	slog.SetDefault(defaultLogger)
@@ -119,8 +122,8 @@ func run(ctx context.Context, cfg config.AppConfig) error {
 		Repositories: repos,
 		Hasher:       hash.NewBcryptHasher(bcrypt.DefaultCost),
 		AuthManager:  authManager,
-		Cache:        cacheDriver,
-		Event:        eventDriver,
+		Cache:        cache.New(cacheDriver),
+		Event:        bus.New(eventDriver),
 		Scheduler:    sched,
 		Logger:       defaultLogger,
 	})

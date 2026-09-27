@@ -9,20 +9,20 @@ import (
 )
 
 type memCache struct {
-	Client *memcache.Client
-	Prefix string
+	client *memcache.Client
+	prefix string
 }
 
 func NewMemCachedDriver(client *memcache.Client, prefix string) Driver {
-	return memCache{Client: client, Prefix: prefix}
+	return memCache{client: client, prefix: prefix}
 }
 
 func (m memCache) Set(_ context.Context, key string, data []byte, ttl time.Duration) error {
-	return m.Client.Set(&memcache.Item{Key: m.Prefix + key, Value: data, Expiration: int32(ttl.Seconds())})
+	return m.client.Set(&memcache.Item{Key: m.prefix + key, Value: data, Expiration: int32(ttl.Seconds())})
 }
 
 func (m memCache) Get(_ context.Context, key string) (data []byte, err error) {
-	v, err := m.Client.Get(m.Prefix + key)
+	v, err := m.client.Get(m.prefix + key)
 	if err != nil {
 		if errors.Is(err, memcache.ErrCacheMiss) {
 			return nil, ErrCacheMissed
@@ -33,5 +33,5 @@ func (m memCache) Get(_ context.Context, key string) (data []byte, err error) {
 }
 
 func (m memCache) Delete(_ context.Context, key string) error {
-	return m.Client.Delete(m.Prefix + key)
+	return m.client.Delete(m.prefix + key)
 }

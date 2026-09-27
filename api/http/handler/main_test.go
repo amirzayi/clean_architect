@@ -71,8 +71,8 @@ func TestMain(m *testing.M) {
 		Repositories: repos,
 		Hasher:       hash.NewBcryptHasher(bcrypt.DefaultCost),
 		AuthManager:  authManager,
-		Cache:        cache.NewInMemoryDriver(),
-		Event:        bus.NewInMemoryDriver([]string{}),
+		Cache:        cache.New(cache.NewInMemoryDriver()),
+		Event:        bus.New(bus.NewInMemoryDriver([]string{})),
 		Logger:       slog.Default(),
 	})
 	handler.Register(mux, log.New(io.Discard, "", 0), services, authManager)
